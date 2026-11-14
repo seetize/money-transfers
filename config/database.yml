@@ -1,0 +1,22 @@
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  host: <%= ENV.fetch("DATABASE_HOST", "localhost") %>
+  port: <%= ENV.fetch("DATABASE_PORT", 5432) %>
+  username: <%= ENV.fetch("DATABASE_USER", "postgres") %>
+  password: <%= ENV.fetch("DATABASE_PASSWORD", "postgres") %>
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS", 60) %>
+  checkout_timeout: 10
+
+development:
+  <<: *default
+  database: money_transfers_development
+
+test:
+  <<: *default
+  database: money_transfers_test
+
+production:
+  <<: *default
+  database: <%= ENV.fetch("DATABASE_NAME", "money_transfers_production") %>
+
