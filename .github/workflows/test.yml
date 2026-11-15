@@ -29,3 +29,11 @@ jobs:
       - run: bundle exec rubocop . bin/rails bin/rake bin/rspec bin/prove-race bin/stress bin/verify
       - run: ruby bin/prove-race
       - run: ruby bin/stress
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up -d db
+      - run: docker compose run --rm --build app bin/rspec
+      - if: always()
+        run: docker compose down -v
