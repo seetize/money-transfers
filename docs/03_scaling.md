@@ -32,8 +32,13 @@ Lock находится в PostgreSQL, не в Rails. Если строка уд
 Ledger — append-only source of truth, `accounts.balance` — materialized cache для online authorization. Исправления оформляются reversing entries, а не UPDATE.
 
 - Периодические snapshots хранят account balance и монотонную позицию/partition offset. Reconciliation считает snapshot + tail, а не всю историю.
+- Sequence id не является порядком commit: MAX(ledger.id) без протокола snapshot/watermark может пропустить поздно закоммиченную запись с меньшим id. Для CDC используется commit/WAL position, для снимков — согласованная граница.
 - Инкрементальный job берёт accounts, изменённые после watermark. Balance и ledger читаются в одном consistent snapshot (`REPEATABLE READ`); replica допустима только с зафиксированной replay position, иначе lag создаёт ложные расхождения.
 - Проверки идут на трёх уровнях: account balance = ledger sum; terminal transfer имеет точные debit/credit; system-wide transfer net = 0 и total balances объясняются external deposits/withdrawals.
 - Найденное расхождение блокирует/помечает счёт и создаёт incident. Автоматически «подправлять balance» нельзя до root-cause; correction — отдельная авторизованная ledger operation.
 - CDC/outbox копирует committed ledger в независимое audit storage. Для требований tamper evidence применяются hash chains/Merkle batches, отдельные credentials и immutable retention.
+
+Time partitioning transfers требует отдельного решения для глобальной идемпотентности: PostgreSQL не обеспечивает UNIQUE(key) между временными partitions без включения partition key. Практичный вариант — отдельный непартиционированный registry request keys с политикой retention.
+
+Один SQL SELECT уже читает согласованный snapshot при READ COMMITTED. REPEATABLE READ нужен для нескольких запросов сверки в одной транзакции; полностью атомарный перевод не становится виден наполовину в одном SELECT. На реплике нельзя смешивать её данные с балансами с primary разных моментов времени.
 
