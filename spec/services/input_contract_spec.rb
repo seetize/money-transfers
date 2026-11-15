@@ -22,7 +22,7 @@ RSpec.describe "Transfer input contract" do
     end
   end
 
-  [ nil, 123, [], "", "   ", "x" * 256 ].each do |invalid|
+  [ nil, 123, [], "", "   ", "x" * 256, "null\0byte" ].each do |invalid|
     it "rejects invalid key #{invalid.inspect}" do
       expect { TransferMoney.call(**args.merge(idempotency_key: invalid)) }
         .to raise_error(TransferMoney::InvalidIdempotencyKey)
@@ -35,6 +35,14 @@ RSpec.describe "Transfer input contract" do
       expect { TransferMoney.call(**args) }.to raise_error(TransferMoney::NestedTransaction)
     end
     expect(Transfer.count).to eq(0)
+  end
+
+  it "parses leading-zero account strings in base ten" do
+    account = Account.create!(id: 10, user_id: 10, balance: "10")
+    LedgerEntry.create!(account: account, amount: "10", kind: "deposit")
+    transfer = TransferMoney.call(**args.merge(from_account_id: "010"))
+    expect(transfer.from_account_id).to eq(10)
+    expect(account.reload.balance).to eq(BigDecimal("0"))
   end
 
   it "returns a stable failure if the recipient balance cannot fit NUMERIC(18,2)" do

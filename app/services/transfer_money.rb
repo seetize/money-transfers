@@ -44,7 +44,7 @@ class TransferMoney
       raise InvalidAccount, "account id must be an integer"
     end
 
-    Integer(value)
+    value.is_a?(String) ? Integer(value, 10) : value
   rescue ArgumentError, TypeError
     raise InvalidAccount, "account id must be an integer"
   end
@@ -71,6 +71,7 @@ class TransferMoney
     unless @idempotency_key.is_a?(String) && @idempotency_key.valid_encoding? && @idempotency_key.strip.present?
       raise InvalidIdempotencyKey, "idempotency_key must be a nonblank string"
     end
+    raise InvalidIdempotencyKey, "idempotency_key contains a null byte" if @idempotency_key.include?("\0")
     raise InvalidIdempotencyKey, "idempotency_key is too long" if @idempotency_key.length > 255
   end
 
