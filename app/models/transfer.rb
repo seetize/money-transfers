@@ -17,4 +17,3 @@ class Transfer < ApplicationRecord
     errors.add(:to_account, "must differ from sender") if from_account_id == to_account_id
   end
 end
-

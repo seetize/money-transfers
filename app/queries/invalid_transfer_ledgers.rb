@@ -18,4 +18,3 @@ class InvalidTransferLedgers
       SQL
   end
 end
-

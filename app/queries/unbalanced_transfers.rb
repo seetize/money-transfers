@@ -11,4 +11,3 @@ class UnbalancedTransfers
       SQL
   end
 end
-

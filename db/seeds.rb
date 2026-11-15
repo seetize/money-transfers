@@ -29,7 +29,6 @@ Account.transaction do
   )
 end
 
-[Account, Transfer, LedgerEntry].each do |model|
+[ Account, Transfer, LedgerEntry ].each do |model|
   ActiveRecord::Base.connection.reset_pk_sequence!(model.table_name)
 end
-

@@ -10,4 +10,3 @@ class TopSenders
       .sum(:amount)
   end
 end
-

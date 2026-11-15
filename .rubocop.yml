@@ -3,6 +3,19 @@ inherit_gem:
 
 AllCops:
   NewCops: enable
+  Include:
+    - "**/*.rb"
+    - "Gemfile"
+    - "Rakefile"
+    - "config.ru"
+    - "bin/rails"
+    - "bin/rake"
+    - "bin/rspec"
+    - "bin/prove-race"
+    - "bin/stress"
+    - "bin/verify"
   Exclude:
     - "db/structure.sql"
+    - "work/**/*"
+    - "outputs/**/*"
 

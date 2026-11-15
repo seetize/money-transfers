@@ -23,8 +23,8 @@ RSpec.describe TransferMoney do
     expect(from.reload.balance).to eq(BigDecimal("60.00"))
     expect(to.reload.balance).to eq(BigDecimal("40.00"))
     expect(transfer.ledger_entries.order(:account_id).pluck(:account_id, :amount)).to contain_exactly(
-      [from.id, BigDecimal("-40.00")],
-      [to.id, BigDecimal("40.00")]
+      [ from.id, BigDecimal("-40.00") ],
+      [ to.id, BigDecimal("40.00") ]
     )
     expect(BalanceMismatches.call).to be_empty
   end
@@ -46,7 +46,9 @@ RSpec.describe TransferMoney do
 
   it "returns the original transfer for the same key and parameters" do
     original = transfer_money
-    replayed = transfer_money
+    replayed = described_class.call(
+      from_account_id: from.id, to_account_id: to.id, amount: amount, idempotency_key: key
+    )
 
     expect(replayed.id).to eq(original.id)
     expect(replayed.replayed_request).to be(true)
@@ -77,7 +79,7 @@ RSpec.describe TransferMoney do
   end
 
   it "rejects Float, non-positive, over-precise and out-of-range amounts" do
-    [0.1, "0", "-1.00", "1.001", "10000000000000000.00"].each do |invalid_amount|
+    [ 0.1, "0", "-1.00", "1.001", "10000000000000000.00" ].each do |invalid_amount|
       expect do
         described_class.call(
           from_account_id: from.id,
@@ -147,4 +149,3 @@ RSpec.describe TransferMoney do
     expect(service).to have_received(:sleep).twice
   end
 end
-

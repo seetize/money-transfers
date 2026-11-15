@@ -94,4 +94,3 @@ RSpec.describe "Database invariants" do
     expect_database_rejection { transfer.update_columns(status: "failed", failure_reason: "changed") }
   end
 end
-

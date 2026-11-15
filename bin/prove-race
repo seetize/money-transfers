@@ -1,0 +1,24 @@
+#!/usr/bin/env ruby
+require "json"
+require "open3"
+require "rbconfig"
+
+stdout, stderr, status = Open3.capture3(
+  { "RAILS_ENV" => "test", "PROVE_UNSAFE" => "1" },
+  RbConfig.ruby, File.expand_path("rspec", __dir__),
+  "spec/concurrency/parallel_transfers_spec.rb",
+  "--example", "cannot debit more than the available balance",
+  "--format", "json"
+)
+result = JSON.parse(stdout)
+example = result.fetch("examples").find { |item| item["status"] == "failed" }
+valid_failure = !status.success? && result.dig("summary", "example_count") == 1 &&
+  example&.dig("exception", "class") == "RSpec::Expectations::ExpectationNotMetError" &&
+  example.dig("exception", "message").include?("got: 20")
+unless valid_failure
+  warn stdout
+  warn stderr
+  abort "Negative control did not fail on the expected overspending invariant"
+end
+puts "PASS: unsafe algorithm completed 20 transfers where only 10 were affordable."
+puts "The same concurrency test rejects the original algorithm."

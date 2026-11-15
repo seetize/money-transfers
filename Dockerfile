@@ -1,4 +1,4 @@
-FROM ruby:3.3.6-slim
+FROM ruby:3.3.12-slim
 
 RUN apt-get update -qq \
   && apt-get install --no-install-recommends -y build-essential libpq-dev postgresql-client \
@@ -6,8 +6,8 @@ RUN apt-get update -qq \
 
 WORKDIR /rails
 
-COPY Gemfile ./
-RUN bundle install
+COPY Gemfile Gemfile.lock ./
+RUN bundle config set frozen true && bundle install
 
 COPY . .
 RUN chmod +x bin/*

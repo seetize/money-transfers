@@ -45,11 +45,47 @@ RSpec.describe "POST /transfers", type: :request do
 
     post transfers_path, params: payload, as: :json
 
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.status).to eq(422)
     expect(response.parsed_body).to include(
       "status" => "failed",
       "failure_reason" => "insufficient_funds"
     )
     expect(LedgerEntry.where(kind: "transfer")).to be_empty
+  end
+
+  %i[from_account_id to_account_id amount idempotency_key].each do |field|
+    it "returns 422 when #{field} is missing" do
+      payload[:transfer].delete(field)
+      post transfers_path, params: payload, as: :json
+      expect(response.status).to eq(422)
+      expect(Transfer.count).to eq(0)
+    end
+  end
+
+  [ nil, "invalid", [], {}, { amount: [ "10" ] } ].each do |invalid|
+    it "handles malformed transfer input #{invalid.inspect}" do
+      post transfers_path, params: { transfer: invalid }, as: :json
+      expect(response.status).to eq(422)
+    end
+  end
+
+  it "returns 422 for a fractional sender id" do
+    payload[:transfer][:from_account_id] = from.id + 0.9
+    post transfers_path, params: payload, as: :json
+    expect(response.status).to eq(422)
+  end
+
+  it "returns 404 for a missing account" do
+    payload[:transfer][:to_account_id] = 999_999
+    post transfers_path, params: payload, as: :json
+    expect(response.status).to eq(404)
+    expect(Transfer.count).to eq(0)
+  end
+
+  it "returns 503 and Retry-After after transient retries are exhausted" do
+    allow(TransferMoney).to receive(:call).and_raise(ActiveRecord::Deadlocked)
+    post transfers_path, params: payload, as: :json
+    expect(response.status).to eq(503)
+    expect(response.headers["Retry-After"]).to eq("1")
   end
 end

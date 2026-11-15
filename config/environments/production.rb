@@ -8,4 +8,3 @@ Rails.application.configure do
   config.log_level = ENV.fetch("RAILS_LOG_LEVEL", "info")
   config.active_record.dump_schema_after_migration = false
 end
-

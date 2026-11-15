@@ -16,4 +16,3 @@ module MoneyTransfers
     config.autoload_lib(ignore: %w[assets tasks])
   end
 end
-

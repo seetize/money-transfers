@@ -15,4 +15,3 @@ class LedgerEntry < ApplicationRecord
     errors.add(:kind, "must be transfer exactly when transfer_id is present")
   end
 end
-

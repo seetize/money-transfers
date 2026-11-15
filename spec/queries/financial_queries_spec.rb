@@ -3,13 +3,7 @@ require "rails_helper"
 RSpec.describe "Financial queries" do
   describe BalanceMismatches do
     it "includes accounts with no entries and returns the expected demo differences" do
-      account_one = Account.create!(id: 1, user_id: 101, balance: BigDecimal("1000.00"))
-      account_two = Account.create!(id: 2, user_id: 102, balance: BigDecimal("500.00"))
-      account_three = Account.create!(id: 3, user_id: 103, balance: BigDecimal("0.00"))
-      LedgerEntry.create!(account: account_one, amount: BigDecimal("-100.00"), kind: "deposit")
-      LedgerEntry.create!(account: account_two, amount: BigDecimal("100.00"), kind: "deposit")
-      LedgerEntry.create!(account: account_two, amount: BigDecimal("-200.00"), kind: "deposit")
-      LedgerEntry.create!(account: account_three, amount: BigDecimal("200.00"), kind: "deposit")
+      load Rails.root.join("db/seeds.rb")
 
       rows = described_class.call.index_by(&:id)
 
@@ -73,4 +67,3 @@ RSpec.describe "Financial queries" do
     end
   end
 end
-

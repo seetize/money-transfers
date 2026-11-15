@@ -1,0 +1,12 @@
+#!/usr/bin/env ruby
+require "rbconfig"
+
+ENV["RAILS_ENV"] = "test"
+count = Integer(ENV.fetch("STRESS_RUNS", "20"))
+abort "STRESS_RUNS must be positive" unless count.positive?
+count.times do |index|
+  abort "Concurrency run #{index + 1} failed" unless system(
+    RbConfig.ruby, File.expand_path("rspec", __dir__), "spec/concurrency", "--format", "progress"
+  )
+  puts "Concurrency run #{index + 1}/#{count}: PASS"
+end

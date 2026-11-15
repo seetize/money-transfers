@@ -11,4 +11,3 @@ class BalanceMismatches
       SQL
   end
 end
-

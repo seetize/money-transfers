@@ -118,4 +118,3 @@ class AddFinancialInvariantTriggers < ActiveRecord::Migration[7.2]
     SQL
   end
 end
-

@@ -11,4 +11,3 @@ Rails.application.configure do
   config.active_record.maintain_test_schema = true
   config.active_job.queue_adapter = :test
 end
-

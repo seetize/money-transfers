@@ -6,6 +6,7 @@ class TransferMoney
   class AccountNotFound < Error; end
   class InvalidIdempotencyKey < Error; end
   class IdempotencyConflict < Error; end
+  class NestedTransaction < Error; end
 
   RETRYABLE_ERRORS = [
     ActiveRecord::Deadlocked,
@@ -14,6 +15,7 @@ class TransferMoney
   ].freeze
   MAX_ATTEMPTS = 3
   MAX_AMOUNT = BigDecimal("9999999999999999.99")
+  MAX_ACCOUNT_ID = (2**63) - 1
 
   def self.call(**arguments)
     new(**arguments).call
@@ -23,26 +25,34 @@ class TransferMoney
     @from_account_id = parse_account_id(from_account_id)
     @to_account_id = parse_account_id(to_account_id)
     @amount = parse_amount(amount)
-    @idempotency_key = idempotency_key.to_s
+    @idempotency_key = idempotency_key
   end
 
   # Do not call inside an application-owned transaction: retryable PostgreSQL errors
   # abort the surrounding transaction and must be retried from its outermost boundary.
   def call
     validate!
+    raise NestedTransaction, "call outside an existing transaction" if Transfer.connection.transaction_open?
+
     with_retries { perform }
   end
 
   private
 
   def parse_account_id(value)
+    unless value.is_a?(Integer) || (value.is_a?(String) && value.match?(/\A[0-9]+\z/))
+      raise InvalidAccount, "account id must be an integer"
+    end
+
     Integer(value)
   rescue ArgumentError, TypeError
     raise InvalidAccount, "account id must be an integer"
   end
 
   def parse_amount(value)
-    raise InvalidAmount, "Float is not allowed for money" if value.is_a?(Float)
+    unless value.is_a?(String) || value.is_a?(Integer) || value.is_a?(BigDecimal)
+      raise InvalidAmount, "amount must be a decimal string, Integer or BigDecimal"
+    end
 
     BigDecimal(value.to_s)
   rescue ArgumentError
@@ -51,11 +61,16 @@ class TransferMoney
 
   def validate!
     raise InvalidAccount, "account id must be positive" if @from_account_id <= 0 || @to_account_id <= 0
+    if @from_account_id > MAX_ACCOUNT_ID || @to_account_id > MAX_ACCOUNT_ID
+      raise InvalidAccount, "account id exceeds PostgreSQL bigint"
+    end
     raise SameAccount, "sender and receiver must differ" if @from_account_id == @to_account_id
     raise InvalidAmount, "amount must be finite and positive" unless @amount.finite? && @amount.positive?
     raise InvalidAmount, "amount has more than 2 decimal places" unless @amount == @amount.round(2)
     raise InvalidAmount, "amount exceeds NUMERIC(18,2)" if @amount > MAX_AMOUNT
-    raise InvalidIdempotencyKey, "idempotency_key is required" if @idempotency_key.empty?
+    unless @idempotency_key.is_a?(String) && @idempotency_key.valid_encoding? && @idempotency_key.strip.present?
+      raise InvalidIdempotencyKey, "idempotency_key must be a nonblank string"
+    end
     raise InvalidIdempotencyKey, "idempotency_key is too long" if @idempotency_key.length > 255
   end
 
@@ -75,6 +90,12 @@ class TransferMoney
         next transfer
       end
 
+      if accounts.fetch(@to_account_id).balance > MAX_AMOUNT - @amount
+        transfer.update!(status: "failed", failure_reason: "balance_limit_exceeded")
+        transfer.replayed_request = false
+        next transfer
+      end
+
       update_balances!
       create_ledger_entries!(transfer.id)
       transfer.update!(status: "completed")
@@ -87,7 +108,7 @@ class TransferMoney
 
   def claim_idempotency_key
     result = Transfer.insert_all(
-      [{
+      [ {
         from_account_id: @from_account_id,
         to_account_id: @to_account_id,
         amount: @amount,
@@ -95,7 +116,7 @@ class TransferMoney
         idempotency_key: @idempotency_key,
         created_at: Time.current,
         updated_at: Time.current
-      }],
+      } ],
       unique_by: :index_transfers_on_idempotency_key,
       returning: %w[id]
     )
@@ -114,7 +135,7 @@ class TransferMoney
   end
 
   def lock_accounts
-    accounts = Account.where(id: [@from_account_id, @to_account_id])
+    accounts = Account.where(id: [ @from_account_id, @to_account_id ])
       .order(:id)
       .lock("FOR NO KEY UPDATE")
       .index_by(&:id)
@@ -125,9 +146,9 @@ class TransferMoney
 
   def update_balances!
     Account.where(id: @from_account_id)
-      .update_all(["balance = balance - ?, updated_at = CURRENT_TIMESTAMP", @amount])
+      .update_all([ "balance = balance - ?, updated_at = CURRENT_TIMESTAMP", @amount ])
     Account.where(id: @to_account_id)
-      .update_all(["balance = balance + ?, updated_at = CURRENT_TIMESTAMP", @amount])
+      .update_all([ "balance = balance + ?, updated_at = CURRENT_TIMESTAMP", @amount ])
   end
 
   def create_ledger_entries!(transfer_id)
@@ -164,4 +185,3 @@ class TransferMoney
     end
   end
 end
-

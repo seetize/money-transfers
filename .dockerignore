@@ -3,4 +3,6 @@ log/*
 tmp/*
 vendor/bundle
 coverage
+work
+outputs
 

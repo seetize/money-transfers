@@ -1,10 +1,3 @@
---
--- PostgreSQL database dump
---
-
--- Dumped from database version 18.3
--- Dumped by pg_dump version 18.3
-
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
@@ -30,17 +23,29 @@ DECLARE
   credit_count bigint;
 BEGIN
   SELECT * INTO checked_transfer FROM transfers WHERE id = checked_transfer_id;
-  IF NOT FOUND OR checked_transfer.status = 'pending' THEN RETURN; END IF;
+  IF NOT FOUND OR checked_transfer.status = 'pending' THEN
+    RETURN;
+  END IF;
+
   SELECT COUNT(*),
-         COUNT(*) FILTER (WHERE account_id = checked_transfer.from_account_id AND amount = -checked_transfer.amount),
-         COUNT(*) FILTER (WHERE account_id = checked_transfer.to_account_id AND amount = checked_transfer.amount)
+         COUNT(*) FILTER (
+           WHERE account_id = checked_transfer.from_account_id
+             AND amount = -checked_transfer.amount
+         ),
+         COUNT(*) FILTER (
+           WHERE account_id = checked_transfer.to_account_id
+             AND amount = checked_transfer.amount
+         )
     INTO entry_count, debit_count, credit_count
-    FROM ledger_entries WHERE transfer_id = checked_transfer_id;
+    FROM ledger_entries
+   WHERE transfer_id = checked_transfer_id;
+
   IF checked_transfer.status = 'completed'
      AND NOT (entry_count = 2 AND debit_count = 1 AND credit_count = 1) THEN
     RAISE EXCEPTION 'completed transfer % has invalid ledger entries', checked_transfer_id
       USING ERRCODE = 'check_violation';
   END IF;
+
   IF checked_transfer.status = 'failed' AND entry_count <> 0 THEN
     RAISE EXCEPTION 'failed transfer % must not have ledger entries', checked_transfer_id
       USING ERRCODE = 'check_violation';
@@ -57,7 +62,9 @@ CREATE FUNCTION public.check_ledger_row_transfer() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  IF NEW.transfer_id IS NOT NULL THEN PERFORM assert_transfer_ledger(NEW.transfer_id); END IF;
+  IF NEW.transfer_id IS NOT NULL THEN
+    PERFORM assert_transfer_ledger(NEW.transfer_id);
+  END IF;
   RETURN NULL;
 END;
 $$;
@@ -91,6 +98,19 @@ $$;
 
 
 --
+-- Name: forbid_transfer_deletion(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.forbid_transfer_deletion() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  RAISE EXCEPTION 'transfers are retained for idempotency' USING ERRCODE = 'check_violation';
+END;
+$$;
+
+
+--
 -- Name: forbid_transfer_identity_mutation(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -104,10 +124,12 @@ BEGIN
      OR NEW.idempotency_key <> OLD.idempotency_key THEN
     RAISE EXCEPTION 'transfer identity is immutable' USING ERRCODE = 'check_violation';
   END IF;
+
   IF OLD.status <> 'pending' OR NEW.status NOT IN ('completed', 'failed') THEN
     RAISE EXCEPTION 'invalid transfer status transition: % -> %', OLD.status, NEW.status
       USING ERRCODE = 'check_violation';
   END IF;
+
   RETURN NEW;
 END;
 $$;
@@ -124,9 +146,10 @@ SET default_table_access_method = heap;
 CREATE TABLE public.accounts (
     id bigint NOT NULL,
     user_id bigint NOT NULL,
-    balance numeric(18,2) DEFAULT 0 NOT NULL,
+    balance numeric(18,2) DEFAULT 0.0 NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT accounts_balance_finite CHECK ((balance <> 'NaN'::numeric)),
     CONSTRAINT accounts_balance_non_negative CHECK ((balance >= (0)::numeric))
 );
 
@@ -173,7 +196,9 @@ CREATE TABLE public.ledger_entries (
     amount numeric(18,2) NOT NULL,
     kind character varying DEFAULT 'transfer'::character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT ledger_amount_finite CHECK ((amount <> 'NaN'::numeric)),
     CONSTRAINT ledger_amount_non_zero CHECK ((amount <> (0)::numeric)),
+    CONSTRAINT ledger_deposit_positive CHECK ((((kind)::text <> 'deposit'::text) OR (amount > (0)::numeric))),
     CONSTRAINT ledger_kind_matches_transfer CHECK ((((kind)::text = 'transfer'::text) = (transfer_id IS NOT NULL))),
     CONSTRAINT ledger_kind_valid CHECK (((kind)::text = ANY ((ARRAY['transfer'::character varying, 'deposit'::character varying])::text[])))
 );
@@ -221,10 +246,11 @@ CREATE TABLE public.transfers (
     failure_reason character varying,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT transfers_amount_finite CHECK ((amount <> 'NaN'::numeric)),
     CONSTRAINT transfers_amount_positive CHECK ((amount > (0)::numeric)),
     CONSTRAINT transfers_distinct_accounts CHECK ((from_account_id <> to_account_id)),
-    CONSTRAINT transfers_failure_reason_matches_status CHECK (((((status)::text = 'failed'::text) AND (failure_reason IS NOT NULL)) OR (((status)::text = ANY ((ARRAY['pending'::character varying, 'completed'::character varying])::text[])) AND (failure_reason IS NULL)))),
-    CONSTRAINT transfers_idempotency_key_present CHECK ((char_length((idempotency_key)::text) > 0)),
+    CONSTRAINT transfers_failure_reason_matches_status CHECK ((((status)::text = 'failed'::text) = (failure_reason IS NOT NULL))),
+    CONSTRAINT transfers_idempotency_key_present CHECK ((char_length(btrim((idempotency_key)::text)) > 0)),
     CONSTRAINT transfers_status_valid CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'completed'::character varying, 'failed'::character varying])::text[])))
 );
 
@@ -331,6 +357,13 @@ CREATE UNIQUE INDEX index_ledger_entries_on_transfer_and_account ON public.ledge
 
 
 --
+-- Name: index_transfers_on_from_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_transfers_on_from_account_id ON public.transfers USING btree (from_account_id);
+
+
+--
 -- Name: index_transfers_on_from_account_id_and_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -342,6 +375,13 @@ CREATE INDEX index_transfers_on_from_account_id_and_created_at ON public.transfe
 --
 
 CREATE UNIQUE INDEX index_transfers_on_idempotency_key ON public.transfers USING btree (idempotency_key);
+
+
+--
+-- Name: index_transfers_on_to_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_transfers_on_to_account_id ON public.transfers USING btree (to_account_id);
 
 
 --
@@ -369,7 +409,7 @@ CREATE CONSTRAINT TRIGGER ledger_entries_transfer_consistent AFTER INSERT ON pub
 -- Name: transfers transfers_immutable_identity_and_status; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER transfers_immutable_identity_and_status BEFORE UPDATE OF from_account_id, to_account_id, amount, idempotency_key, status ON public.transfers FOR EACH ROW EXECUTE FUNCTION public.forbid_transfer_identity_mutation();
+CREATE TRIGGER transfers_immutable_identity_and_status BEFORE UPDATE OF from_account_id, to_account_id, amount, idempotency_key, status, failure_reason ON public.transfers FOR EACH ROW EXECUTE FUNCTION public.forbid_transfer_identity_mutation();
 
 
 --
@@ -380,42 +420,52 @@ CREATE CONSTRAINT TRIGGER transfers_ledger_consistent AFTER INSERT OR UPDATE ON 
 
 
 --
--- Name: ledger_entries ledger_entries_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: transfers transfers_no_delete; Type: TRIGGER; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.ledger_entries
-    ADD CONSTRAINT ledger_entries_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id);
-
-
---
--- Name: ledger_entries ledger_entries_transfer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.ledger_entries
-    ADD CONSTRAINT ledger_entries_transfer_id_fkey FOREIGN KEY (transfer_id) REFERENCES public.transfers(id);
+CREATE TRIGGER transfers_no_delete BEFORE DELETE ON public.transfers FOR EACH ROW EXECUTE FUNCTION public.forbid_transfer_deletion();
 
 
 --
--- Name: transfers transfers_from_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: transfers fk_rails_0ed16a9709; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.transfers
-    ADD CONSTRAINT transfers_from_account_id_fkey FOREIGN KEY (from_account_id) REFERENCES public.accounts(id);
+    ADD CONSTRAINT fk_rails_0ed16a9709 FOREIGN KEY (to_account_id) REFERENCES public.accounts(id);
 
 
 --
--- Name: transfers transfers_to_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: transfers fk_rails_3b260aee3c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.transfers
-    ADD CONSTRAINT transfers_to_account_id_fkey FOREIGN KEY (to_account_id) REFERENCES public.accounts(id);
+    ADD CONSTRAINT fk_rails_3b260aee3c FOREIGN KEY (from_account_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: ledger_entries fk_rails_95dd992850; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ledger_entries
+    ADD CONSTRAINT fk_rails_95dd992850 FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: ledger_entries fk_rails_f33b502f5a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ledger_entries
+    ADD CONSTRAINT fk_rails_f33b502f5a FOREIGN KEY (transfer_id) REFERENCES public.transfers(id);
 
 
 --
 -- PostgreSQL database dump complete
 --
 
-INSERT INTO public.schema_migrations (version) VALUES
-  ('20261114090000'),
-  ('20261114090100');
+SET search_path TO "$user", public;
+
+INSERT INTO "schema_migrations" (version) VALUES
+('20261115090000'),
+('20261114090100'),
+('20261114090000');
 

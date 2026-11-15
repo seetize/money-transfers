@@ -6,6 +6,9 @@ require "rspec/rails"
 require "securerandom"
 require "concurrent"
 
+# Opt-in negative control; never loaded in normal runs or application environments.
+require_relative "support/unsafe_transfer_adapter" if ENV["PROVE_UNSAFE"] == "1"
+
 ActiveRecord::Migration.maintain_test_schema!
 
 module AccountHelpers
@@ -38,10 +41,19 @@ module AccountHelpers
 end
 
 RSpec.configure do |config|
-  config.fixture_paths = [Rails.root.join("spec/fixtures")]
-  config.use_transactional_fixtures = true
+  config.fixture_paths = [ Rails.root.join("spec/fixtures") ]
+  config.use_transactional_fixtures = false
+  config.before do
+    ActiveRecord::Base.connection.execute(
+      "TRUNCATE ledger_entries, transfers, accounts RESTART IDENTITY CASCADE"
+    )
+  end
+  config.after do
+    ActiveRecord::Base.connection.execute(
+      "TRUNCATE ledger_entries, transfers, accounts RESTART IDENTITY CASCADE"
+    )
+  end
   config.infer_spec_type_from_file_location!
   config.filter_rails_from_backtrace!
   config.include AccountHelpers
 end
-

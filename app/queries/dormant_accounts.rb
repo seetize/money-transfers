@@ -4,4 +4,3 @@ class DormantAccounts
     Account.where.not(id: recent_account_ids)
   end
 end
-

@@ -5,6 +5,7 @@ class TransfersController < ApplicationController
   rescue_from TransferMoney::AccountNotFound, with: :render_not_found
   rescue_from TransferMoney::IdempotencyConflict, with: :render_conflict
   rescue_from(*TransferMoney::RETRYABLE_ERRORS, with: :render_temporarily_unavailable)
+  rescue_from ActionController::ParameterMissing, with: :render_unprocessable
 
   def create
     transfer = TransferMoney.call(**transfer_params.to_h.symbolize_keys)
@@ -14,11 +15,16 @@ class TransfersController < ApplicationController
   private
 
   def transfer_params
-    params.require(:transfer).permit(:from_account_id, :to_account_id, :amount, :idempotency_key)
+    input = params.require(:transfer)
+    raise ActionController::ParameterMissing, :transfer unless input.is_a?(ActionController::Parameters)
+
+    permitted = input.permit(:from_account_id, :to_account_id, :amount, :idempotency_key)
+    %i[from_account_id to_account_id amount idempotency_key].each { |field| permitted.require(field) }
+    permitted
   end
 
   def response_status(transfer)
-    transfer.completed? ? :created : :unprocessable_entity
+    transfer.completed? ? :created : :unprocessable_content
   end
 
   def transfer_payload(transfer)
@@ -26,7 +32,7 @@ class TransfersController < ApplicationController
   end
 
   def render_unprocessable(error)
-    render json: { error: error.class.name.demodulize, message: error.message }, status: :unprocessable_entity
+    render json: { error: error.class.name.demodulize, message: error.message }, status: :unprocessable_content
   end
 
   def render_not_found(error)
@@ -43,4 +49,3 @@ class TransfersController < ApplicationController
       status: :service_unavailable
   end
 end
-
