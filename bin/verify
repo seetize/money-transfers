@@ -3,12 +3,13 @@ require "rbconfig"
 
 ENV["RAILS_ENV"] = "test"
 commands = [
-  [RbConfig.ruby, "bin/rails", "db:prepare"],
-  [RbConfig.ruby, "bin/rspec"],
-  ["bundle", "exec", "rubocop"],
-  [RbConfig.ruby, "bin/prove-race"]
+  [ RbConfig.ruby, "bin/rails", "db:create" ],
+  [ RbConfig.ruby, "bin/rails", "db:prepare" ],
+  [ RbConfig.ruby, "bin/rspec" ],
+  [ "bundle", "exec", "rubocop", ".", "bin/rails", "bin/rake", "bin/rspec", "bin/prove-race", "bin/stress", "bin/verify" ],
+  [ RbConfig.ruby, "bin/prove-race" ]
 ]
-commands << [RbConfig.ruby, "bin/stress"] if ARGV.include?("--stress")
+commands << [ RbConfig.ruby, "bin/stress" ] if ARGV.include?("--stress")
 commands.each do |command|
   puts "Running: #{command.join(' ')}"
   abort "Verification failed" unless system(*command)

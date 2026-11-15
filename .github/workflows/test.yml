@@ -24,8 +24,8 @@ jobs:
         with:
           ruby-version: .ruby-version
           bundler-cache: true
-      - run: ruby bin/rails db:prepare
+      - run: ruby bin/rails db:create db:prepare
       - run: ruby bin/rspec
-      - run: bundle exec rubocop
+      - run: bundle exec rubocop . bin/rails bin/rake bin/rspec bin/prove-race bin/stress bin/verify
       - run: ruby bin/prove-race
       - run: ruby bin/stress
